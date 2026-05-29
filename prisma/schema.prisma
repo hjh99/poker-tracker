@@ -1,0 +1,114 @@
+// prisma/schema.prisma
+// Note: database URL is now configured in prisma.config.ts (Prisma v7+)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────────
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  hostedSessions Session[]       @relation("HostedSessions")
+  sessionPlayers SessionPlayer[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// SESSION
+// ─────────────────────────────────────────────
+model Session {
+  id         String        @id @default(uuid())
+  hostId     String        @map("host_id")
+  name       String
+  status     SessionStatus @default(ACTIVE)
+  smallBlind Int           @map("small_blind") // stored in cents
+  bigBlind   Int           @map("big_blind")   // stored in cents
+  startedAt  DateTime      @default(now()) @map("started_at")
+  endedAt    DateTime?     @map("ended_at")
+
+  host    User            @relation("HostedSessions", fields: [hostId], references: [id])
+  players SessionPlayer[]
+
+  @@map("sessions")
+}
+
+enum SessionStatus {
+  ACTIVE
+  SETTLING
+  CLOSED
+}
+
+// ─────────────────────────────────────────────
+// SESSION PLAYER
+// ─────────────────────────────────────────────
+model SessionPlayer {
+  id         String @id @default(uuid())
+  sessionId  String @map("session_id")
+  userId     String @map("user_id")
+  totalBuyIn Int    @default(0) @map("total_buy_in") // in cents
+  finalStack Int    @default(0) @map("final_stack")  // in cents
+  netResult  Int    @default(0) @map("net_result")   // finalStack - totalBuyIn
+
+  session      Session       @relation(fields: [sessionId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  transactions Transaction[]
+
+  @@unique([sessionId, userId])
+  @@map("session_players")
+}
+
+// ─────────────────────────────────────────────
+// TRANSACTION
+// ─────────────────────────────────────────────
+model Transaction {
+  id              String          @id @default(uuid())
+  sessionPlayerId String          @map("session_player_id")
+  type            TransactionType
+  amount          Int             // in cents
+  note            String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  sessionPlayer SessionPlayer @relation(fields: [sessionPlayerId], references: [id])
+
+  @@map("transactions")
+}
+
+enum TransactionType {
+  BUY_IN
+  TOP_UP
+  CASH_OUT
+}
+
+// ─────────────────────────────────────────────
+// SETTLEMENT
+// ─────────────────────────────────────────────
+model Settlement {
+  id        String           @id @default(uuid())
+  sessionId String           @map("session_id")
+  fromId    String           @map("from_id")
+  toId      String           @map("to_id")
+  amount    Int              // in cents
+  status    SettlementStatus @default(PENDING)
+  createdAt DateTime         @default(now()) @map("created_at")
+  paidAt    DateTime?        @map("paid_at")
+
+  @@map("settlements")
+}
+
+enum SettlementStatus {
+  PENDING
+  CONFIRMED
+  PAID
+}

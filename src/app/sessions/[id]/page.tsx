@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, use } from "react";
 import PlayerRow from "@/components/PlayerRow";
 
 interface Player {
@@ -11,7 +11,11 @@ interface Player {
   hasCashedOut: boolean;
 }
 
-export default function LiveSessionPage({ params }: { params: { id: string } }) {
+export default function LiveSessionPage({ params }: { params: Promise<{ id: string }> }) {
+  // Safe modern Next.js asynchronous parameter unwrapping
+  const unwrappedParams = use(params);
+  const sessionId = unwrappedParams.id;
+
   // Mocking standard game initialization state
   const [players, setPlayers] = useState<Player[]>([
     { id: "1", name: "Alex Chen", buyInCents: 5000, cashOutCents: null, hasCashedOut: false },
@@ -108,7 +112,7 @@ export default function LiveSessionPage({ params }: { params: { id: string } }) 
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-zinc-200 dark:border-zinc-800">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Friday Night NLH</h1>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Session ID: {params.id}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Session ID: {sessionId}</p>
           </div>
           <div className="flex gap-3">
             <button

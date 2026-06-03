@@ -1,11 +1,11 @@
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "./generated/prisma"
 }
-
 /// System state for tracking an ongoing vs archived poker session
 enum SessionStatus {
   ACTIVE

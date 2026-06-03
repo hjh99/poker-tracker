@@ -2,7 +2,7 @@
 // import { PrismaClient } from "@prisma/client";
 
 //  TO THIS (Prisma 7 local style):
-import { PrismaClient } from "../prisma/generated/prisma"; 
+import { PrismaClient } from "../prisma/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 

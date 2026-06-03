@@ -1,114 +1,99 @@
-// prisma/schema.prisma
-// Note: database URL is now configured in prisma.config.ts (Prisma v7+)
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // Ideal for connection pooling in serverless environments like Vercel
+}
 
 generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
-  provider = "postgresql"
+/// System state for tracking an ongoing vs archived poker session
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
 }
 
-// ─────────────────────────────────────────────
-// USER
-// ─────────────────────────────────────────────
-model User {
-  id           String   @id @default(uuid())
-  name         String
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  createdAt    DateTime @default(now()) @map("created_at")
+/// Represents a permanent poker club or home game venue
+model Room {
+  id           String    @id @default(uuid())
+  name         String    @db.VarChar(100)
+  passcode     String    @db.VarChar(20) // Simple entry PIN passcode
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  hostedSessions Session[]       @relation("HostedSessions")
-  sessionPlayers SessionPlayer[]
+  // Relations
+  players      Player[]
+  sessions     Session[]
 
-  @@map("users")
+  @@map("rooms")
 }
 
-// ─────────────────────────────────────────────
-// SESSION
-// ─────────────────────────────────────────────
+/// Represents a player profile inside a specific room
+model Player {
+  id               String          @id @default(uuid())
+  roomId           String          @map("room_id")
+  name             String          @db.VarChar(100)
+  
+  // 🔮 FUTURE AUTH LINK: Optional and Nullable.
+  // Left blank for loose guest profiles. Populate this with a Supabase/Clerk 
+  // User ID later when a player creates an official account to claim their stats.
+  userId           String?         @map("user_id") 
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  // Historical cached performance milestones (Updated automatically upon session archiving)
+  gamesPlayed      Int             @default(0) @map("games_played")
+  lifetimeNetCents Int             @default(0) @map("lifetime_net_cents") // Can be negative
+
+  // Relations
+  room             Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sessionRecords   PlayerSession[]
+
+  // Enforces unique player names within the same room container
+  @@unique([roomId, name])
+  @@map("players")
+}
+
+/// Tracks an individual game night instance belonging to a Room
 model Session {
-  id         String        @id @default(uuid())
-  hostId     String        @map("host_id")
-  name       String
-  status     SessionStatus @default(ACTIVE)
-  smallBlind Int           @map("small_blind") // stored in cents
-  bigBlind   Int           @map("big_blind")   // stored in cents
-  startedAt  DateTime      @default(now()) @map("started_at")
-  endedAt    DateTime?     @map("ended_at")
+  id             String          @id @default(uuid())
+  roomId         String          @map("room_id")
+  status         SessionStatus   @default(ACTIVE)
+  startTime      DateTime        @default(now()) @map("start_time")
+  endTime        DateTime?       @map("end_time")
+  
+  // Custom game structure parameters preserved for mathematical scaling
+  dollarBuyIn    Int             @map("dollar_buy_in")    // e.g., $50
+  startingChips  Int             @map("starting_chips")  // e.g., 500 chips
+  smallBlind     Int             @map("small_blind")     // e.g., 5 chips
+  bigBlind       Int             @map("big_blind")       // e.g., 10 chips
 
-  host    User            @relation("HostedSessions", fields: [hostId], references: [id])
-  players SessionPlayer[]
+  // Relations
+  room           Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  playerRecords  PlayerSession[]
 
   @@map("sessions")
 }
 
-enum SessionStatus {
-  ACTIVE
-  SETTLING
-  CLOSED
-}
+/// Dynamic junction ledger tracking individual stacks within a single session
+model PlayerSession {
+  id            String    @id @default(uuid())
+  sessionId     String    @map("session_id")
+  playerId      String    @map("player_id")
+  
+  // Performance indicators tracked strictly in whole physical chip counts
+  buyInChips    Int       @map("buy_in_chips")   // Total chips issued (starting stack + rebuys)
+  cashOutChips  Int?      @map("cash_out_chips") // Raw chips remaining when stepping away
+  hasCashedOut  Boolean   @default(false) @map("has_cashed_out")
+  joinedAt      DateTime  @default(now()) @map("joined_at")
 
-// ─────────────────────────────────────────────
-// SESSION PLAYER
-// ─────────────────────────────────────────────
-model SessionPlayer {
-  id         String @id @default(uuid())
-  sessionId  String @map("session_id")
-  userId     String @map("user_id")
-  totalBuyIn Int    @default(0) @map("total_buy_in") // in cents
-  finalStack Int    @default(0) @map("final_stack")  // in cents
-  netResult  Int    @default(0) @map("net_result")   // finalStack - totalBuyIn
+  // Relations
+  session       Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  player        Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
-  session      Session       @relation(fields: [sessionId], references: [id])
-  user         User          @relation(fields: [userId], references: [id])
-  transactions Transaction[]
-
-  @@unique([sessionId, userId])
-  @@map("session_players")
-}
-
-// ─────────────────────────────────────────────
-// TRANSACTION
-// ─────────────────────────────────────────────
-model Transaction {
-  id              String          @id @default(uuid())
-  sessionPlayerId String          @map("session_player_id")
-  type            TransactionType
-  amount          Int             // in cents
-  note            String?
-  createdAt       DateTime        @default(now()) @map("created_at")
-
-  sessionPlayer SessionPlayer @relation(fields: [sessionPlayerId], references: [id])
-
-  @@map("transactions")
-}
-
-enum TransactionType {
-  BUY_IN
-  TOP_UP
-  CASH_OUT
-}
-
-// ─────────────────────────────────────────────
-// SETTLEMENT
-// ─────────────────────────────────────────────
-model Settlement {
-  id        String           @id @default(uuid())
-  sessionId String           @map("session_id")
-  fromId    String           @map("from_id")
-  toId      String           @map("to_id")
-  amount    Int              // in cents
-  status    SettlementStatus @default(PENDING)
-  createdAt DateTime         @default(now()) @map("created_at")
-  paidAt    DateTime?        @map("paid_at")
-
-  @@map("settlements")
-}
-
-enum SettlementStatus {
-  PENDING
-  CONFIRMED
-  PAID
+  // Enforces that a player can only hold one seat concurrently in a single session
+  @@unique([sessionId, playerId])
+  @@map("player_sessions")
 }

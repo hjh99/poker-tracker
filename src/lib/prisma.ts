@@ -1,9 +1,11 @@
-// 🚀 Clean, short relative resolution paths inside the src block!
-import { PrismaClient } from "@prisma/client";
+// ❌ CHANGE THIS (Old Prisma 5/6 style):
+// import { PrismaClient } from "@prisma/client";
+
+//  TO THIS (Prisma 7 local style):
+import { PrismaClient } from "../prisma/generated/prisma"; 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
-// Rest of your client setup file remains exactly the same...
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 let prismaInstance: PrismaClient;

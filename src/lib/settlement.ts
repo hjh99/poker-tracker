@@ -1,85 +1,67 @@
-// lib/settlement.ts
-// Calculates the minimum number of transfers to settle a poker session.
-// Uses a greedy algorithm: match the biggest debtor with the biggest creditor.
-//
-// Usage:
-//   const transfers = calculateSettlement(players)
-//   // returns e.g. [{ from: "Alice", to: "Bob", amount: 4000 }]
-
-export interface PlayerResult {
-  userId: string
-  name: string
-  netResult: number // positive = profit, negative = loss (in cents)
+export interface PlayerBalance {
+  name: string;
+  netResultCents: number; // Positive for winners, negative for losers
 }
 
-export interface Transfer {
-  fromId: string
-  fromName: string
-  toId: string
-  toName: string
-  amount: number // in cents
+export interface Transaction {
+  from: string;
+  to: string;
+  amountCents: number;
 }
 
-export function calculateSettlement(players: PlayerResult[]): Transfer[] {
-  const transfers: Transfer[] = []
-
-  // Split players into two buckets
+/**
+ * Calculates the minimum number of transactions needed to settle a poker session.
+ * Uses a greedy matching algorithm matching largest creditors with largest debtors.
+ */
+export function calculateSettlement(players: PlayerBalance[]): Transaction[] {
+  // 1. Separate players into debtors (lost money) and creditors (won money)
   const debtors = players
-    .filter((p) => p.netResult < 0)
-    .map((p) => ({ ...p, balance: Math.abs(p.netResult) }))
-    .sort((a, b) => b.balance - a.balance) // biggest debt first
+    .filter((p) => p.netResultCents < 0)
+    .map((p) => ({ name: p.name, amount: Math.abs(p.netResultCents) }))
+    .sort((a, b) => b.amount - a.amount); // Sort descending to handle big amounts first
 
   const creditors = players
-    .filter((p) => p.netResult > 0)
-    .map((p) => ({ ...p, balance: p.netResult }))
-    .sort((a, b) => b.balance - a.balance) // biggest credit first
+    .filter((p) => p.netResultCents > 0)
+    .map((p) => ({ name: p.name, amount: p.netResultCents }))
+    .sort((a, b) => b.amount - a.amount);
 
-  let i = 0 // debtor pointer
-  let j = 0 // creditor pointer
+  const transactions: Transaction[] = [];
 
-  while (i < debtors.length && j < creditors.length) {
-    const debtor = debtors[i]
-    const creditor = creditors[j]
+  let dIdx = 0;
+  let cIdx = 0;
 
-    // Transfer the smaller of the two balances
-    const amount = Math.min(debtor.balance, creditor.balance)
+  // 2. Greedy loop matching debts
+  while (dIdx < debtors.length && cIdx < creditors.length) {
+    const debtor = debtors[dIdx];
+    const creditor = creditors[cIdx];
 
-    transfers.push({
-      fromId: debtor.userId,
-      fromName: debtor.name,
-      toId: creditor.userId,
-      toName: creditor.name,
-      amount,
-    })
+    // Skip if negligible remaining balance (handling potential 1-cent edge cases)
+    if (debtor.amount === 0) {
+      dIdx++;
+      continue;
+    }
+    if (creditor.amount === 0) {
+      cIdx++;
+      continue;
+    }
 
-    debtor.balance -= amount
-    creditor.balance -= amount
+    // Determine the transfer amount (the smaller of the two balances)
+    const settlementAmount = Math.min(debtor.amount, creditor.amount);
 
-    // Move pointer if balance is cleared
-    if (debtor.balance === 0) i++
-    if (creditor.balance === 0) j++
+    transactions.push({
+      from: debtor.name,
+      to: creditor.name,
+      amountCents: settlementAmount,
+    });
+
+    // Deduct the settled amount from both records
+    debtor.amount -= settlementAmount;
+    creditor.amount -= settlementAmount;
+
+    // Advance indexes if balances hit absolute zero
+    if (debtor.amount === 0) dIdx++;
+    if (creditor.amount === 0) cIdx++;
   }
 
-  return transfers
-}
-
-// Helper: format cents as a readable currency string
-// e.g. 4000 → "$40.00"
-export function formatAmount(cents: number, currency = "SGD"): string {
-  return new Intl.NumberFormat("en-SG", {
-    style: "currency",
-    currency,
-  }).format(cents / 100)
-}
-
-// Helper: summarise results for display
-// Returns a sorted leaderboard with formatted net results
-export function buildLeaderboard(players: PlayerResult[]) {
-  return [...players]
-    .sort((a, b) => b.netResult - a.netResult)
-    .map((p) => ({
-      ...p,
-      formatted: formatAmount(p.netResult),
-      label: p.netResult > 0 ? "profit" : p.netResult < 0 ? "loss" : "even",
-    }))
+  return transactions;
 }

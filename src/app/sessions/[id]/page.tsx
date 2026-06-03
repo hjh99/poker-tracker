@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, use } from "react";
+import Link from "next/link";
 import PlayerRow from "@/components/PlayerRow";
 
 interface Player {
@@ -12,7 +13,6 @@ interface Player {
 }
 
 export default function LiveSessionPage({ params }: { params: Promise<{ id: string }> }) {
-  // Safe modern Next.js asynchronous parameter unwrapping
   const unwrappedParams = use(params);
   const sessionId = unwrappedParams.id;
 
@@ -29,10 +29,10 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
   
   // Dynamic Form Variables
   const [playerName, setPlayerName] = useState("");
-  const [inputAmount, setInputAmount] = useState(""); // Managed as localized string input
+  const [inputAmount, setInputAmount] = useState("");
 
   // Session clock simulation
-  const [secondsElapsed, setSecondsElapsed] = useState(3240); // Initial 54 minutes
+  const [secondsElapsed, setSecondsElapsed] = useState(3240);
   useEffect(() => {
     const timer = setInterval(() => setSecondsElapsed(prev => prev + 1), 1000);
     return () => clearInterval(timer);
@@ -106,8 +106,17 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6 sm:p-10 text-zinc-900 dark:text-zinc-50">
-      <div className="max-w-6xl mx-auto space-y-8">
+      <div className="max-w-6xl mx-auto space-y-6">
         
+        {/* Navigation Escape Hatch */}
+        <Link 
+          href="/dashboard" 
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors group w-fit"
+        >
+          <span className="transform group-hover:-translate-x-0.5 transition-transform font-mono">←</span> 
+          Leave Table (Return to Dashboard)
+        </Link>
+
         {/* Top Minimalist Navigation Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-zinc-200 dark:border-zinc-800">
           <div>

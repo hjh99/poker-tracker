@@ -2,6 +2,7 @@
 
 import React, { useState, use } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface SavedPlayer {
   id: string;
@@ -69,16 +70,36 @@ export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: st
     setNewPlayerName("");
   };
 
+  // const handleLaunchSession = () => {
+  //   // 1. Gather selected players
+  //   const activeSeatedPlayers = roster.filter(p => selectedRosterIds.includes(p.id));
+    
+  //   // 2. In production, fire API call to create a Session record with these players initialized
+  //   console.log("Launching session with players:", activeSeatedPlayers, "Initial Buy-in:", defaultBuyIn);
+    
+  //   // 3. Redirect to the live session workspace screen we made earlier
+  //   const mockGeneratedSessionId = "session_" + Math.random().toString(36).substring(2, 7);
+  //   router.push(`/sessions/${mockGeneratedSessionId}`);
+  // };
+
   const handleLaunchSession = () => {
-    // 1. Gather selected players
-    const activeSeatedPlayers = roster.filter(p => selectedRosterIds.includes(p.id));
+    // 1. Filter out the actual names of the selected roster members
+    const activeSeatedNames = roster
+      .filter(p => selectedRosterIds.includes(p.id))
+      .map(p => p.name);
     
-    // 2. In production, fire API call to create a Session record with these players initialized
-    console.log("Launching session with players:", activeSeatedPlayers, "Initial Buy-in:", defaultBuyIn);
-    
-    // 3. Redirect to the live session workspace screen we made earlier
-    const mockGeneratedSessionId = "session_" + Math.random().toString(36).substring(2, 7);
-    router.push(`/sessions/${mockGeneratedSessionId}`);
+    // 2. Convert default buy-in to cents (integer math)
+    const buyInCents = Math.round(parseFloat(defaultBuyIn) * 100) || 5000;
+
+    // 3. Serialize arrays into clean URL-safe search parameters
+    const paramsString = new URLSearchParams({
+      names: activeSeatedNames.join(","),
+      buyIn: buyInCents.toString()
+    }).toString();
+
+    // 4. Boot user straight to the active tracking workspace with query context attached
+    // Ensure "paramsString" here perfectly matches the lowercase variable above!
+    router.push(`/sessions/active?${paramsString}`);
   };
 
   const formatCurrency = (cents: number) => {
@@ -93,6 +114,15 @@ export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: st
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6 sm:p-10 text-zinc-900 dark:text-zinc-50">
       <div className="max-w-5xl mx-auto space-y-8">
+
+        {/* Navigation Escape Hatch */}
+        <Link 
+          href="/dashboard" 
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors group w-fit"
+        >
+          <span className="transform group-hover:-translate-x-0.5 transition-transform font-mono">←</span> 
+          Back to Dashboard
+        </Link>
         
         {/* Breadcrumb & Header Title Ribbon */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -103,7 +133,7 @@ export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: st
               <span className="text-zinc-500 font-medium">{roomId}</span>
             </div>
             <h1 className="text-3xl font-bold tracking-tight">{roomName}</h1>
-          </div>
+          </div>Navigation
           
           <div className="flex items-center gap-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2 shadow-sm text-sm">
             <div>

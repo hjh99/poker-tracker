@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, use } from "react";
+import React, { useState, use, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createSessionAction } from "@/app/actions/session"; // 🚀 Imported backend action wrapper
 
 interface SavedPlayer {
   id: string;
@@ -21,8 +22,9 @@ interface HistoricalSession {
 export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: string }> }) {
   const router = useRouter();
   const { roomId } = use(params);
+  const [isPending, startTransition] = useTransition(); // 🚀 React transition hook for database execution
 
-  // Mock Room Meta Data (Would come from Supabase using roomId)
+  // Mock Room Meta Data (Would come from Postgres/Supabase using roomId)
   const roomName = "Sengkang Rounders";
   const roomPasscode = "8888";
 
@@ -44,7 +46,6 @@ export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: st
   // State for seeding a new session
   const [selectedRosterIds, setSelectedRosterIds] = useState<string[]>(["p1", "p2", "p3"]);
   const [newPlayerName, setNewPlayerName] = useState("");
-  const [isSeedingGame, setIsSeedingGame] = useState(false);
   const [defaultBuyIn, setDefaultBuyIn] = useState("50.00");
 
   // Handlers
@@ -70,36 +71,28 @@ export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: st
     setNewPlayerName("");
   };
 
-  // const handleLaunchSession = () => {
-  //   // 1. Gather selected players
-  //   const activeSeatedPlayers = roster.filter(p => selectedRosterIds.includes(p.id));
-    
-  //   // 2. In production, fire API call to create a Session record with these players initialized
-  //   console.log("Launching session with players:", activeSeatedPlayers, "Initial Buy-in:", defaultBuyIn);
-    
-  //   // 3. Redirect to the live session workspace screen we made earlier
-  //   const mockGeneratedSessionId = "session_" + Math.random().toString(36).substring(2, 7);
-  //   router.push(`/sessions/${mockGeneratedSessionId}`);
-  // };
-
+  // 🚀 Rewired to execute your Prisma Transaction Backend Action directly
   const handleLaunchSession = () => {
-    // 1. Filter out the actual names of the selected roster members
-    const activeSeatedNames = roster
-      .filter(p => selectedRosterIds.includes(p.id))
-      .map(p => p.name);
-    
-    // 2. Convert default buy-in to cents (integer math)
-    const buyInCents = Math.round(parseFloat(defaultBuyIn) * 100) || 5000;
+    if (selectedRosterIds.length === 0) return;
 
-    // 3. Serialize arrays into clean URL-safe search parameters
-    const paramsString = new URLSearchParams({
-      names: activeSeatedNames.join(","),
-      buyIn: buyInCents.toString()
-    }).toString();
+    // Convert string dollar value securely to numerical format (Defaults to $50)
+    const buyInDollars = Math.round(parseFloat(defaultBuyIn)) || 50;
 
-    // 4. Boot user straight to the active tracking workspace with query context attached
-    // Ensure "paramsString" here perfectly matches the lowercase variable above!
-    router.push(`/sessions/active?${paramsString}`);
+    startTransition(async () => {
+      try {
+        await createSessionAction({
+          roomId: roomId,
+          dollarBuyIn: buyInDollars,
+          startingChips: 500, // standard baseline chip units per buy-in
+          smallBlind: 5,      // standard small blind chip denomination
+          bigBlind: 10,       // standard big blind chip denomination
+          playerIds: selectedRosterIds, // Pass your existing checklist array variable!
+        });
+      } catch (err) {
+        console.error("Failed to safely spin up backend transaction session context:", err);
+        alert("An error occurred while linking database records.");
+      }
+    });
   };
 
   const formatCurrency = (cents: number) => {
@@ -133,7 +126,7 @@ export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: st
               <span className="text-zinc-500 font-medium">{roomId}</span>
             </div>
             <h1 className="text-3xl font-bold tracking-tight">{roomName}</h1>
-          </div>Navigation
+          </div>
           
           <div className="flex items-center gap-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2 shadow-sm text-sm">
             <div>
@@ -237,6 +230,7 @@ export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: st
                       <input
                         type="checkbox"
                         checked={isSelected}
+                        disabled={isPending} // Freezes interaction while executing server side
                         onChange={() => handleTogglePlayerSelection(player.id)}
                         className="h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-900 dark:border-zinc-800 dark:bg-zinc-900"
                       />
@@ -254,6 +248,7 @@ export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: st
                 <input
                   type="number"
                   step="1"
+                  disabled={isPending}
                   value={defaultBuyIn}
                   onChange={e => setDefaultBuyIn(e.target.value)}
                   className="w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-transparent px-3 py-2 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-zinc-400"
@@ -264,10 +259,14 @@ export default function RoomLobbyPage({ params }: { params: Promise<{ roomId: st
             {/* Final Action Triggers */}
             <button
               onClick={handleLaunchSession}
-              disabled={selectedRosterIds.length === 0}
+              disabled={selectedRosterIds.length === 0 || isPending}
               className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-200 dark:disabled:bg-zinc-800 disabled:text-zinc-400 disabled:cursor-not-allowed py-3 text-sm font-semibold text-white shadow-md shadow-indigo-600/10 transition-all flex items-center justify-center gap-2"
             >
-              Open Active Table ({selectedRosterIds.length} Seated)
+              {isPending ? (
+                <span>Spinning Up Game Night...</span>
+              ) : (
+                <span>Open Active Table ({selectedRosterIds.length} Seated)</span>
+              )}
             </button>
           </div>
 

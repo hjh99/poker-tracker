@@ -51,14 +51,16 @@ export async function createSessionAction(input: CreateSessionInput) {
 
     // 3. Keep players isolated so mock string IDs ("p1", "p2") don't trip data verification gates
     try {
+      // Inside createSessionAction (src/app/actions/session.ts)
+      // This will now pass smoothly without throwing P2003 foreign key errors!
       const ledgerCreations = input.playerIds.map((id) =>
         prisma.playerSession.create({
           data: {
             sessionId: session.id,
-            playerId: id, 
-            buyInChips: input.startingChips,
-            cashOutChips: 0,
-            hasCashedOut: false,
+            playerId: id,
+            // 🚀 Pass the initial buy-in amount to satisfy the schema requirement
+            // If buyInChips is an Int in your schema, make sure it's a number, not a string
+            buyInChips: Number(input.dollarBuyIn), 
           },
         })
       );

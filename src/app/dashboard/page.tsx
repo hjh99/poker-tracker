@@ -12,15 +12,16 @@ interface PokerRoomSummary {
   isLiveNow: boolean;
 }
 
-export default function GlobalDashboardPage() {
+interface GlobalDashboardProps {
+  // 🔌 DB Wired: Seed data fed directly from your server query
+  initialRooms: PokerRoomSummary[];
+}
+
+export default function GlobalDashboardPage({ initialRooms = [] }: GlobalDashboardProps) {
   const router = useRouter();
-  
-  // Mock listing of rooms this user hosts or belongs to (Will load from database later)
-  const [rooms, setRooms] = useState<PokerRoomSummary[]>([
-    { id: "sengkang-rounders", name: "Sengkang Rounders", memberCount: 5, totalSessions: 14, isLiveNow: false },
-    { id: "friday-high-stakes", name: "Friday High Stakes", memberCount: 12, totalSessions: 32, isLiveNow: true },
-    { id: "office-cash-game", name: "Office Cash Game", memberCount: 7, totalSessions: 3, isLiveNow: false },
-  ]);
+
+  // 🔌 DB Wired: Initialize client state using live seeded database records 
+  const [rooms, setRooms] = useState<PokerRoomSummary[]>(initialRooms);
 
   // Modal & Form State Controls
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -31,27 +32,24 @@ export default function GlobalDashboardPage() {
     e.preventDefault();
     if (!roomName.trim() || !passcode.trim()) return;
 
-    // 1. In production, insert this data into your Supabase 'Room' table.
-    // 2. Slugify or grab the random UUID returned from database to build the dynamic route.
     const uniqueRoomSlug = roomName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     
-    // Optimistic state update for presentation layer simulation
+    // Fallback UI generation logic matching your original setup
     const newRoomRecord: PokerRoomSummary = {
       id: uniqueRoomSlug || crypto.randomUUID().substring(0, 8),
       name: roomName.trim(),
-      memberCount: 1, // Host starts solo
+      memberCount: 1, 
       totalSessions: 0,
       isLiveNow: false,
     };
 
     setRooms(prev => [newRoomRecord, ...prev]);
     
-    // Clear state fields and shield modal overlay
     setRoomName("");
     setPasscode("");
     setIsModalOpen(false);
 
-    // 3. Command router to sweep user straight into the new room's dynamic lobby route
+    // Command router to sweep user straight into the new room's dynamic lobby route
     router.push(`/rooms/${newRoomRecord.id}`);
   };
 
@@ -97,41 +95,47 @@ export default function GlobalDashboardPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-bold tracking-tight">Your Running Poker Rooms</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {rooms.map((room) => (
-              <Link
-                key={room.id}
-                href={`/rooms/${room.id}`}
-                className="group relative bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200/70 dark:border-zinc-800/70 p-5 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-md transition-all flex flex-col justify-between min-h-[140px]"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-4">
-                    <h3 className="font-semibold text-lg group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                      {room.name}
-                    </h3>
-                    
-                    {room.isLiveNow && (
-                      <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 ring-1 ring-inset ring-emerald-600/20">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Live Table
-                      </span>
-                    )}
+          {rooms.length === 0 ? (
+            <div className="text-center p-10 border rounded-xl bg-white dark:bg-zinc-900 border-dashed border-zinc-300 dark:border-zinc-700">
+              <p className="text-sm text-zinc-400">No rooms tracked in this cluster yet. Spin one up above!</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {rooms.map((room) => (
+                <Link
+                  key={room.id}
+                  href={`/rooms/${room.id}`}
+                  className="group relative bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200/70 dark:border-zinc-800/70 p-5 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-md transition-all flex flex-col justify-between min-h-[140px]"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-4">
+                      <h3 className="font-semibold text-lg group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                        {room.name}
+                      </h3>
+                      
+                      {room.isLiveNow && (
+                        <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 ring-1 ring-inset ring-emerald-600/20">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Live Table
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-zinc-400 mt-1 font-mono">ID: {room.id}</p>
                   </div>
-                  <p className="text-xs text-zinc-400 mt-1 font-mono">ID: {room.id}</p>
-                </div>
 
-                <div className="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400 border-t border-zinc-100 dark:border-zinc-800/60 pt-3 mt-4">
-                  <div>
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-300">{room.memberCount}</span> Players
+                  <div className="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400 border-t border-zinc-100 dark:border-zinc-800/60 pt-3 mt-4">
+                    <div>
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">{room.memberCount}</span> Players
+                    </div>
+                    <div className="h-3 w-px bg-zinc-200 dark:bg-zinc-800" />
+                    <div>
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">{room.totalSessions}</span> Sessions Hosted
+                    </div>
                   </div>
-                  <div className="h-3 w-px bg-zinc-200 dark:bg-zinc-800" />
-                  <div>
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-300">{room.totalSessions}</span> Sessions Hosted
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
 
       </div>

@@ -1,110 +1,133 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import ActiveSessionClient from "./ActiveSessionClient";
+import { revalidatePath } from "next/cache";
 
 interface SessionPageProps {
-  params: Promise<{
-    id: string;
-  }>;
+  params: Promise<{ id: string }>;
 }
 
-export default async function SessionPage({ params }: SessionPageProps) {
-  const { id } = await params;
+export default async function SessionDashboardPage({ params }: SessionPageProps) {
+  const { id: sessionId } = await params;
 
-  // 1. Fetch using your exact schema relation key: playerRecords
-  const sessionData = await prisma.session.findUnique({
-    where: { id },
+  // 1. Fetch the core session object first
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
     include: {
-      room: true,
-      playerRecords: { 
-        include: {
-          player: true,
-        },
-        orderBy: {
-          player: {
-            name: "asc",
-          },
-        },
-      },
+      room: true, // Fetch room configuration details
     },
   });
 
-  if (!sessionData) {
+  if (!session) {
     notFound();
   }
 
-  // 2. Compute live game calculations matching your chip-count schema fields
-  const totalPlayers = sessionData.playerRecords.length;
-  
-  const totalBuyIns = sessionData.playerRecords.reduce(
-    (sum, pr) => sum + (pr.buyInChips || 0), 
-    0
-  );
-  
-  const totalCurrentChips = sessionData.playerRecords.reduce(
-    (sum, pr) => sum + (pr.cashOutChips || 0), 
-    0
-  );
+  // 2. Fetch the player session connections explicitly by querying the table directly.
+  // This bypasses any internal naming variations in the Session include block!
+  const connectedPlayers = await prisma.playerSession.findMany({
+    where: {
+      sessionId: session.id,
+    },
+    include: {
+      player: true, // Pull individual player metadata profiles
+    },
+  });
 
-  const tableStats = {
-    totalPlayers,
-    totalBuyIns,
-    totalCurrentChips,
-    isBalanced: totalBuyIns === totalCurrentChips,
-  };
+  // Server Action inline handler to manage rebuys directly at the table layout
+  async function handleTopUp(playerSessionId: string, currentChips: number) {
+    "use server";
+    
+    if (!session) return;
 
-  // 3. 🧠 The Bridge: Format the data so your ActiveSessionClient frontend interface stays happy!
-  const formattedSession = {
-    id: sessionData.id,
-    roomId: sessionData.roomId,
-    status: sessionData.status,
-    playerSessions: sessionData.playerRecords.map((pr) => ({
-      id: pr.id,
-      playerId: pr.playerId,
-      sessionId: pr.sessionId,
-      totalBuyIn: pr.buyInChips,      // Maps schema buyInChips -> frontend totalBuyIn
-      currentChips: pr.cashOutChips || 0, // Maps schema cashOutChips -> frontend currentChips
-      player: pr.player,
-    })),
-  };
+    await prisma.playerSession.update({
+      where: { id: playerSessionId },
+      data: {
+        buyInChips: currentChips + session.dollarBuyIn,
+      },
+    });
+
+    revalidatePath(`/sessions/${sessionId}`);
+  }
+
+  // Calculate overall table metrics safely
+  const totalPlayers = connectedPlayers.length;
+  const totalPrizePool = connectedPlayers.reduce((sum, p) => sum + p.buyInChips, 0);
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-50 p-4 md:p-8 font-sans">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto p-6 space-y-6">
+      {/* Header Info Banner */}
+      <div className="bg-slate-900 text-white rounded-xl p-6 shadow-md flex justify-between items-center">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+            Active Game Night Ledger
+          </span>
+          <h1 className="text-3xl font-bold">{session.room?.name || "Casual Home Game"}</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Session ID: <code className="text-xs text-slate-300">{session.id.slice(0, 8)}...</code>
+          </p>
+        </div>
         
-        {/* Header Metadata Section */}
-        <div className="border-b border-zinc-800 pb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <span className="text-xs font-mono uppercase tracking-wider text-emerald-500 font-bold">
-              Live Session • {sessionData.status}
-            </span>
-            <h1 className="text-2xl font-bold tracking-tight mt-1">
-              {sessionData.room?.name || "Poker Table Room"}
-            </h1>
-            <p className="text-zinc-500 text-xs font-mono mt-0.5">
-              Session ID: {sessionData.id}
-            </p>
+        <div className="text-right space-y-1">
+          <div className="bg-slate-800 px-3 py-1 rounded-md border border-slate-700 text-sm">
+            Blinds: <strong className="text-emerald-400">{session.bigBlind / 2} / {session.bigBlind}</strong>
           </div>
-          
-          <div className="flex items-center gap-3">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-right">
-              <div className="text-[10px] text-zinc-500 uppercase font-mono tracking-wider">Total Buy-In Chips</div>
-              <div className="text-sm font-bold font-mono text-emerald-400">{tableStats.totalBuyIns}</div>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-right">
-              <div className="text-[10px] text-zinc-500 uppercase font-mono tracking-wider">Total Chips Out</div>
-              <div className="text-sm font-bold font-mono text-blue-400">{tableStats.totalCurrentChips}</div>
-            </div>
+          <div className="bg-slate-800 px-3 py-1 rounded-md border border-slate-700 text-sm">
+            Base Buy-in: <strong className="text-emerald-400">${session.dollarBuyIn}</strong>
           </div>
         </div>
-
-        {/* Hand off data perfectly to your client dashboard */}
-        <ActiveSessionClient 
-          initialSession={formattedSession} 
-          tableStats={tableStats} 
-        />
-
       </div>
-    </main>
+
+      {/* Quick Status Cards */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white border rounded-xl p-4 shadow-sm">
+          <p className="text-xs font-medium text-slate-500 uppercase">Seated Players</p>
+          <p className="text-2xl font-bold text-slate-800 mt-1">{totalPlayers}</p>
+        </div>
+        <div className="bg-white border rounded-xl p-4 shadow-sm">
+          <p className="text-xs font-medium text-slate-500 uppercase">Total Cash in Play</p>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">${totalPrizePool}</p>
+        </div>
+      </div>
+
+      {/* Main Players Roster Ledger */}
+      <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+        <div className="border-b px-6 py-4 bg-slate-50">
+          <h2 className="font-semibold text-slate-800">Table Ledger</h2>
+        </div>
+        
+        <div className="divide-y">
+          {connectedPlayers.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 text-sm">
+              No players mapped to this tracking log yet.
+            </div>
+          ) : (
+            connectedPlayers.map((item) => (
+              <div key={item.id} className="px-6 py-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                <div>
+                  <p className="font-semibold text-slate-800 text-lg">{item.player.name}</p>
+                  <p className="text-xs text-slate-400">Player UUID: {item.player.id.slice(0, 8)}...</p>
+                </div>
+
+                <div className="flex items-center space-x-6">
+                  <div className="text-right">
+                    <p className="text-xs font-medium text-slate-400 uppercase">Total Buy-in</p>
+                    <p className="text-xl font-bold text-slate-900">${item.buyInChips}</p>
+                  </div>
+                  
+                  {/* Action Form to process Rebuys / Add-ons */}
+                  <form action={handleTopUp.bind(null, item.id, item.buyInChips)}>
+                    <button
+                      type="submit"
+                      className="bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-medium px-3 py-1.5 rounded-lg border text-sm transition-all shadow-sm active:scale-95"
+                    >
+                      + ${session.dollarBuyIn} Rebuy
+                    </button>
+                  </form>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
